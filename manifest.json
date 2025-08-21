@@ -1,0 +1,11 @@
+{
+  "id": "obsidian-r2-uploader",
+  "name": "R2 Image Uploader",
+  "version": "1.0.0",
+  "minAppVersion": "0.15.0",
+  "description": "Upload images to Cloudflare R2 with folder restrictions and year-based organization. Converts [[image]] to ![image](URL) format automatically.",
+  "author": "hnagato",
+  "authorUrl": "https://github.com/hnagato",
+  "fundingUrl": "",
+  "isDesktopOnly": false
+}

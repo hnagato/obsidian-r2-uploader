@@ -1,0 +1,166 @@
+# Environment Variables
+# OBSIDIAN_PLUGINS_DIR: Path to Obsidian plugins directory
+#   Default: ~/.obsidian/plugins (standard Obsidian location)
+#   Override with: export OBSIDIAN_PLUGINS_DIR="/path/to/your/obsidian/vault/.obsidian/plugins"
+
+[env]
+_.file = ".env"
+
+[tasks.install]
+description = "Install plugin to Obsidian"
+run = """
+# Build plugin
+npm run build
+
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+# Create plugin directory
+mkdir -p "$PLUGIN_DIR"
+
+# Copy required files
+cp main.js "$PLUGIN_DIR/"
+cp manifest.json "$PLUGIN_DIR/"
+
+echo "Plugin installed to: $PLUGIN_DIR"
+echo "Please restart Obsidian and enable the plugin in settings."
+"""
+
+[tasks.uninstall]
+description = "Uninstall plugin from Obsidian"
+run = """
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+# Remove plugin directory
+if [ -d "$PLUGIN_DIR" ]; then
+  rm -rf "$PLUGIN_DIR"
+  echo "Plugin uninstalled from: $PLUGIN_DIR"
+else
+  echo "Plugin not found at: $PLUGIN_DIR"
+fi
+"""
+
+[tasks.reinstall]
+description = "Reinstall plugin (uninstall + install)"
+depends = ["uninstall", "install"]
+
+[tasks.backup-settings]
+description = "Backup current plugin settings"
+run = """
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+if [ -f "$PLUGIN_DIR/data.json" ]; then
+  cp "$PLUGIN_DIR/data.json" "./dev-settings-backup.json"
+  echo "Settings backed up to dev-settings-backup.json"
+  echo "Current settings:"
+  cat "$PLUGIN_DIR/data.json" | jq . 2>/dev/null || cat "$PLUGIN_DIR/data.json"
+else
+  echo "No settings file found at $PLUGIN_DIR/data.json"
+fi
+"""
+
+[tasks.restore-settings]
+description = "Restore plugin settings from backup"
+run = """
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+if [ -f "./dev-settings-backup.json" ]; then
+  mkdir -p "$PLUGIN_DIR"
+  cp "./dev-settings-backup.json" "$PLUGIN_DIR/data.json"
+  echo "Settings restored from backup"
+  echo "Restored settings:"
+  cat "$PLUGIN_DIR/data.json" | jq . 2>/dev/null || cat "$PLUGIN_DIR/data.json"
+else
+  echo "No backup file found (dev-settings-backup.json)"
+fi
+"""
+
+[tasks.update]
+description = "Update plugin files without removing settings"
+run = """
+# Build plugin
+npm run build
+
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+# Create plugin directory
+mkdir -p "$PLUGIN_DIR"
+
+# Temporarily backup settings
+TEMP_SETTINGS="/tmp/obsidian-r2-uploader-data.json"
+if [ -f "$PLUGIN_DIR/data.json" ]; then
+  cp "$PLUGIN_DIR/data.json" "$TEMP_SETTINGS"
+  echo "Settings backed up temporarily"
+else
+  echo "No existing settings found"
+fi
+
+# Update plugin files
+cp main.js "$PLUGIN_DIR/"
+cp manifest.json "$PLUGIN_DIR/"
+
+# Restore settings
+if [ -f "$TEMP_SETTINGS" ]; then
+  cp "$TEMP_SETTINGS" "$PLUGIN_DIR/data.json"
+  rm "$TEMP_SETTINGS"
+  echo "Settings restored"
+  echo "Current settings:"
+  cat "$PLUGIN_DIR/data.json" | jq . 2>/dev/null || cat "$PLUGIN_DIR/data.json"
+fi
+
+echo "Plugin updated with settings preserved"
+echo "Please reload Obsidian or restart to see changes"
+"""
+
+[tasks.qa]
+description = "Run all quality assurance checks (typecheck, format, lint, test)"
+run = """
+echo "Running quality assurance checks..."
+
+echo "TypeScript type checking..."
+npx tsc --noEmit --skipLibCheck
+
+echo "Code formatting..."
+npm run format
+
+echo "Linting..."
+npm run check
+
+echo "Running tests..."
+npm run test
+
+echo "All QA checks completed successfully!"
+"""
+
+[tasks.status]
+description = "Check plugin installation status"
+run = """
+# Set up plugin directory
+OBSIDIAN_PLUGINS_DIR="${OBSIDIAN_PLUGINS_DIR:-$HOME/.obsidian/plugins}"
+PLUGIN_DIR="$OBSIDIAN_PLUGINS_DIR/obsidian-r2-uploader"
+
+echo "Plugin directory: $PLUGIN_DIR"
+
+if [ -d "$PLUGIN_DIR" ]; then
+  echo "Plugin is installed"
+  echo "Files:"
+  ls -la "$PLUGIN_DIR"
+  if [ -f "$PLUGIN_DIR/data.json" ]; then
+    echo ""
+    echo "Settings:"
+    cat "$PLUGIN_DIR/data.json" | jq . 2>/dev/null || cat "$PLUGIN_DIR/data.json"
+  fi
+else
+  echo "Plugin is not installed"
+fi
+"""
+
