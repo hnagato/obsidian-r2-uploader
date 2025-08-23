@@ -9,7 +9,7 @@ const getCurrentFilePath = (app: App): string => {
   return activeFile?.path ?? '';
 };
 
-const isAllowed = (filePath: string, enabledFolders: readonly string[]): boolean => {
+const isInEnabledFolder = (filePath: string, enabledFolders: readonly string[]): boolean => {
   if (!filePath) return false;
   if (enabledFolders.length === 0) return true;
 
@@ -93,9 +93,7 @@ const extractPasteFiles = (event: ClipboardEvent): File[] => {
 
 const validateConditions = (app: App, settings: R2UploaderSettings): boolean => {
   if (settings.enabledFolders.length > 0) {
-    const currentFilePath = getCurrentFilePath(app);
-    const isInEnabledFolder = isAllowed(currentFilePath, settings.enabledFolders);
-    if (!isInEnabledFolder) {
+    if (!isInEnabledFolder(getCurrentFilePath(app), settings.enabledFolders)) {
       showNotice('Current folder is not enabled for uploads');
       return false;
     }
