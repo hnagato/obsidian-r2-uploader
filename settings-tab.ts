@@ -44,7 +44,7 @@ const saveSettingsImmediate = async (
     const updatedSettings = updateSettings(latestSettings, key, value);
     await saveSettingsFn(updatedSettings);
   } catch (error) {
-    new Notice(`Failed to save settings: ${error}`, 5000);
+    new Notice(`Failed to save settings: ${error}`, 5_000);
   }
 };
 

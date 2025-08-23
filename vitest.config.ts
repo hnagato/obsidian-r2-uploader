@@ -5,6 +5,9 @@ export default defineConfig({
     environment: 'happy-dom',
     globals: true,
     setupFiles: ['test/setup.ts'],
+    typecheck: {
+      tsconfig: './test/tsconfig.json',
+    },
     coverage: {
       provider: 'v8',
       reporter: ['text', 'html', 'lcov'],

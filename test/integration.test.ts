@@ -1,7 +1,8 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
+import 'aws-sdk-client-mock-vitest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateUniqueFileName, uploadFileToR2 } from '../r2-uploader';
+import { generateUniqueFileName, uploadFile } from '../r2-uploader';
 import { createMockFile, createValidSettings, TEST_TIMESTAMP } from './utils/test-helpers';
 
 const s3Mock = mockClient(S3Client);
@@ -18,54 +19,60 @@ describe('Integration Tests', () => {
       s3Mock.on(PutObjectCommand).resolves({});
 
       const settings = createValidSettings({
-        customDomain: 'https://cdn.example.com',
+        customDomain: 'https://cdn.hnagato.com',
         useYearSubdirectory: true,
       });
       const file = createMockFile('test-image.png', 'image/png');
       vi.setSystemTime(TEST_TIMESTAMP);
 
       const fileName = generateUniqueFileName(file.name);
-      const result = await uploadFileToR2(settings, file, fileName);
+      const result = await uploadFile(settings, file, fileName);
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.url).toContain('https://cdn.example.com/images/2022/');
+        expect(result.data.url).toContain('https://cdn.hnagato.com/images/2022/');
         expect(result.data.fileName).toBe('1640995200000.png');
         expect(result.data.timestamp).toBe(TEST_TIMESTAMP);
       }
 
-      expect(s3Mock).toHaveReceivedCommandWith(PutObjectCommand, {
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls.length).toBe(1);
+      expect(calls[0].args[0].input).toMatchObject({
         Bucket: 'test-bucket',
         Key: 'images/2022/1640995200000.png',
-        Body: expect.any(Uint8Array),
         ContentType: 'image/png',
       });
+      expect(calls[0].args[0].input.Body).toBeInstanceOf(Uint8Array);
     });
 
     it('should handle custom domain and path configuration', async () => {
       s3Mock.on(PutObjectCommand).resolves({});
 
       const customSettings = createValidSettings({
-        customDomain: 'https://custom.cdn.com',
+        customDomain: 'https://custom.hnagato.com',
         pathPrefix: 'uploads/photos',
         useYearSubdirectory: false,
       });
       const file = createMockFile('photo.jpg', 'image/jpeg');
       const fileName = 'custom-photo-123.jpg';
 
-      const result = await uploadFileToR2(customSettings, file, fileName);
+      const result = await uploadFile(customSettings, file, fileName);
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.url).toBe('https://custom.cdn.com/uploads/photos/custom-photo-123.jpg');
+        expect(result.data.url).toBe(
+          'https://custom.hnagato.com/uploads/photos/custom-photo-123.jpg'
+        );
       }
 
-      expect(s3Mock).toHaveReceivedCommandWith(PutObjectCommand, {
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls.length).toBe(1);
+      expect(calls[0].args[0].input).toMatchObject({
         Bucket: 'test-bucket',
         Key: 'uploads/photos/custom-photo-123.jpg',
-        Body: expect.any(Uint8Array),
         ContentType: 'image/jpeg',
       });
+      expect(calls[0].args[0].input.Body).toBeInstanceOf(Uint8Array);
     });
   });
 
@@ -95,23 +102,14 @@ describe('Integration Tests', () => {
 
       const uploadPromises = files.map(async file => {
         const fileName = generateUniqueFileName(file.name);
-        return await uploadFileToR2(settings, file, fileName);
+        return await uploadFile(settings, file, fileName);
       });
 
       const results = await Promise.all(uploadPromises);
 
       expect(results.every(r => r.success)).toBe(true);
-      expect(s3Mock).toHaveReceivedCommandTimes(PutObjectCommand, 2);
-    });
-  });
-
-  describe('Folder Restriction Tests', () => {
-    it('should respect enabled folders setting in upload workflow', () => {
-      const settings = createValidSettings({
-        enabledFolders: ['documents', 'projects/2025'],
-      });
-      expect(settings.enabledFolders).toEqual(['documents', 'projects/2025']);
-      expect(settings.enabledFolders.length).toBeGreaterThan(0);
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls.length).toBe(2);
     });
   });
 
@@ -124,7 +122,7 @@ describe('Integration Tests', () => {
       const file = createMockFile('test.png', 'image/png');
       const fileName = generateUniqueFileName(file.name);
 
-      const result = await uploadFileToR2(incompleteSettings, file, fileName);
+      const result = await uploadFile(incompleteSettings, file, fileName);
 
       expect(result.success).toBe(false);
       if (result.success === false) {
@@ -136,15 +134,6 @@ describe('Integration Tests', () => {
   });
 
   describe('Edge Cases', () => {
-    it('should handle special characters in filenames', () => {
-      vi.setSystemTime(TEST_TIMESTAMP);
-
-      const fileName = generateUniqueFileName('Screenshot 2025-08-20 at 2.30.45 PM.png');
-
-      expect(fileName).toBe('1640995200000.png');
-      expect(fileName).toContain('.png');
-    });
-
     it('should handle path prefix normalization', async () => {
       s3Mock.on(PutObjectCommand).resolves({});
 
@@ -154,27 +143,17 @@ describe('Integration Tests', () => {
       });
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(settings, file, 'test.png');
+      const result = await uploadFile(settings, file, 'test.png');
 
       expect(result.success).toBe(true);
-      expect(s3Mock).toHaveReceivedCommandWith(PutObjectCommand, {
+      const calls = s3Mock.commandCalls(PutObjectCommand);
+      expect(calls.length).toBe(1);
+      expect(calls[0].args[0].input).toMatchObject({
         Bucket: 'test-bucket',
         Key: 'uploads/images/test.png',
-        Body: expect.any(Uint8Array),
         ContentType: 'image/png',
       });
-    });
-
-    it('should generate unique timestamps for different files', () => {
-      vi.setSystemTime(TEST_TIMESTAMP);
-      const fileName1 = generateUniqueFileName('image.png');
-
-      vi.setSystemTime(TEST_TIMESTAMP + 1);
-      const fileName2 = generateUniqueFileName('image.png');
-
-      expect(fileName1).toBe('1640995200000.png');
-      expect(fileName2).toBe('1640995200001.png');
-      expect(fileName1).not.toBe(fileName2);
+      expect(calls[0].args[0].input.Body).toBeInstanceOf(Uint8Array);
     });
   });
 });

@@ -28,7 +28,13 @@ type MockButtonComponent = {
 };
 
 export class Plugin {
-  app: MockApp = {};
+  app: MockApp = {
+    workspace: {
+      getActiveFile: (): null => null,
+      getActiveViewOfType: (): null => null,
+      on: () => ({ unload: () => {} }),
+    },
+  };
   manifest: MockManifest = {};
 
   async loadData(): Promise<MockData> {
@@ -36,6 +42,10 @@ export class Plugin {
   }
 
   async saveData(_data: MockData): Promise<void> {}
+
+  addSettingTab(_settingTab: PluginSettingTab): void {}
+
+  registerEvent(_eventRef: unknown): void {}
 }
 
 export class PluginSettingTab {

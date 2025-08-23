@@ -1,111 +1,114 @@
 import { type App, type Editor, MarkdownView, Notice, Plugin, PluginSettingTab } from 'obsidian';
-import { generateUniqueFileName, uploadFileToR2 } from './r2-uploader';
+import { generateUniqueFileName, uploadFile } from './r2-uploader';
 import { createSettingsTab } from './settings-tab';
-import type { R2UploaderSettings, Result } from './types';
-import { DEFAULT_SETTINGS } from './types';
+import type { R2UploaderSettings, Result, UploadResult } from './types';
+import { DEFAULT_SETTINGS, isSuccess } from './types';
 
-const isSettingsComplete = (settings: R2UploaderSettings): boolean =>
-  !!(settings.endpoint && settings.accessKeyId && settings.secretAccessKey && settings.bucketName);
-
-const getCurrentFilePath = (app: App): string | null => {
+const getCurrentFilePath = (app: App): string => {
   const activeFile = app.workspace.getActiveFile();
-  return activeFile?.path ?? null;
+  return activeFile?.path ?? '';
 };
 
-const isFileInEnabledFolders = (
-  filePath: string | null,
-  enabledFolders: readonly string[]
-): boolean => {
-  if (enabledFolders.length === 0) return true;
+const isAllowed = (filePath: string, enabledFolders: readonly string[]): boolean => {
   if (!filePath) return false;
+  if (enabledFolders.length === 0) return true;
 
   return enabledFolders.some(folder => filePath.startsWith(`${folder}/`) || filePath === folder);
 };
 
-const showNotice = (message: string, timeout = 4000): Notice => new Notice(message, timeout);
+const showNotice = (message: string, timeout = 4_000): Notice => new Notice(message, timeout);
 
-const processImageUpload = async (
+const processFiles = async (
+  files: File[],
+  settings: R2UploaderSettings
+): Promise<readonly Result<UploadResult>[]> => {
+  const uploadPromises = files.map(file =>
+    uploadFile(settings, file, generateUniqueFileName(file.name))
+  );
+  return Promise.all(uploadPromises);
+};
+
+const splitResults = (results: readonly Result<UploadResult>[], files: readonly File[]) =>
+  results.reduce(
+    (acc, result, index) => {
+      const file = files[index];
+      if (isSuccess(result)) {
+        acc.successful.push({ uploadResult: result.data, file });
+      } else {
+        acc.failed.push({ error: result.error, file });
+      }
+      return acc;
+    },
+    { successful: [], failed: [] } as {
+      successful: { uploadResult: UploadResult; file: File }[];
+      failed: { error: string; file: File }[];
+    }
+  );
+
+const insertMarkdownLinks = (
+  editor: Editor,
+  successful: readonly { uploadResult: UploadResult; file: File }[]
+): void => {
+  let insertPosition = editor.getCursor();
+
+  successful.forEach(({ uploadResult, file }) => {
+    const markdownLink = `![${file.name}](${uploadResult.url})`;
+    editor.replaceRange(markdownLink, insertPosition);
+    insertPosition = {
+      ...insertPosition,
+      ch: insertPosition.ch + markdownLink.length,
+    };
+  });
+};
+
+const showResults = (
+  successful: readonly { uploadResult: UploadResult; file: File }[],
+  failed: readonly { error: string; file: File }[]
+): Notice[] => [
+  ...successful.map(({ file }) => showNotice(`Successfully uploaded ${file.name}`, 2_000)),
+  ...failed.map(({ file, error }) => showNotice(`Failed to upload ${file.name}: ${error}`, 0)),
+];
+
+const processImages = async (
   files: File[],
   editor: Editor,
   settings: R2UploaderSettings
 ): Promise<void> => {
-  for (const file of files) {
-    const result = await uploadAndInsertImage(file, editor, settings);
-    if (!result.success && 'error' in result) {
-      showNotice(`Failed to upload ${file.name}: ${result.error}`);
-    }
-  }
+  const results = await processFiles(files, settings);
+  const { successful, failed } = splitResults(results, files);
+  insertMarkdownLinks(editor, successful);
+  showResults(successful, failed);
 };
 
-const getDropImageFiles = (event: Event): File[] => {
-  const dragEvent = event as DragEvent;
-  return Array.from(dragEvent.dataTransfer?.files ?? []).filter(file =>
-    file.type.startsWith('image/')
-  );
+const extractDropFiles = (event: DragEvent): File[] => {
+  return Array.from(event.dataTransfer?.files ?? []).filter(file => file.type.startsWith('image/'));
 };
 
-const getPasteImageFiles = (event: Event): File[] => {
-  const clipboardEvent = event as ClipboardEvent;
-  return Array.from(clipboardEvent.clipboardData?.items ?? [])
+const extractPasteFiles = (event: ClipboardEvent): File[] => {
+  return Array.from(event.clipboardData?.items ?? [])
     .filter(item => item.kind === 'file' && item.type.startsWith('image/'))
     .map(item => item.getAsFile())
     .filter((file): file is File => file !== null);
 };
 
-const uploadAndInsertImage = async (
-  file: File,
-  editor: Editor,
-  settings: R2UploaderSettings
-): Promise<Result<void>> => {
-  const notice = new Notice(`Uploading ${file.name}...`, 2000);
-
-  try {
-    const fileName = generateUniqueFileName(file.name);
-    const uploadResult = await uploadFileToR2(settings, file, fileName);
-
-    // Explicit comparison for TypeScript type guard
-    if (uploadResult.success === false) {
-      notice.hide();
-      return { success: false, error: uploadResult.error };
+const validateConditions = (app: App, settings: R2UploaderSettings): boolean => {
+  if (settings.enabledFolders.length > 0) {
+    const currentFilePath = getCurrentFilePath(app);
+    const isInEnabledFolder = isAllowed(currentFilePath, settings.enabledFolders);
+    if (!isInEnabledFolder) {
+      showNotice('Current folder is not enabled for uploads');
+      return false;
     }
-
-    const markdownLink = `![${file.name}](${uploadResult.data.url})`;
-    const cursor = editor.getCursor();
-    editor.replaceRange(markdownLink, cursor);
-
-    notice.hide();
-    showNotice(`Successfully uploaded ${file.name}`);
-
-    return { success: true, data: undefined };
-  } catch (error) {
-    notice.hide();
-    return {
-      success: false,
-      error: `Upload failed: ${error}`,
-    };
-  }
-};
-
-const shouldHandleUpload = (
-  activeView: MarkdownView | null,
-  app: App,
-  enabledFolders: readonly string[]
-): boolean => {
-  if (!activeView) return false;
-  const currentFilePath = getCurrentFilePath(app);
-  return isFileInEnabledFolders(currentFilePath, enabledFolders);
-};
-
-const validateUploadPreconditions = (
-  activeView: MarkdownView | null,
-  app: App,
-  settings: R2UploaderSettings
-): boolean => {
-  if (!shouldHandleUpload(activeView, app, settings.enabledFolders)) {
-    return false;
   }
 
-  if (!isSettingsComplete(settings)) {
+  const hasRequiredSettings = !!(
+    settings.endpoint &&
+    settings.accessKeyId &&
+    settings.secretAccessKey &&
+    settings.bucketName
+  );
+
+  if (!hasRequiredSettings) {
     showNotice('R2 uploader settings are incomplete. Please check the plugin settings.');
     return false;
   }
@@ -121,20 +124,22 @@ const handleDrop = async (
   try {
     const activeView = app.workspace.getActiveViewOfType(MarkdownView);
 
-    if (!validateUploadPreconditions(activeView, app, settings)) {
+    if (!activeView) {
       return;
     }
 
-    const imageFiles = getDropImageFiles(event);
-    if (imageFiles.length === 0) {
+    if (!validateConditions(app, settings)) {
       return;
     }
+
+    const imageFiles = extractDropFiles(event);
+    if (imageFiles.length === 0) return;
 
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
 
-    await processImageUpload(imageFiles, activeView.editor, settings);
+    await processImages(imageFiles, activeView.editor, settings);
   } catch (error) {
     showNotice(`Plugin error: ${error}`);
   }
@@ -149,18 +154,20 @@ const handlePaste = async (
   try {
     const activeView = app.workspace.getActiveViewOfType(MarkdownView);
 
-    if (!validateUploadPreconditions(activeView, app, settings)) {
+    if (!activeView) {
       return;
     }
 
-    const imageFiles = getPasteImageFiles(event);
-    if (imageFiles.length === 0) {
+    if (!validateConditions(app, settings)) {
       return;
     }
+
+    const imageFiles = extractPasteFiles(event);
+    if (imageFiles.length === 0) return;
 
     event.preventDefault();
 
-    await processImageUpload(imageFiles, editor, settings);
+    await processImages(imageFiles, editor, settings);
   } catch (error) {
     showNotice(`Plugin error: ${error}`);
   }
@@ -186,8 +193,8 @@ class R2UploaderSettingTab extends PluginSettingTab {
 
 export default class R2UploaderPlugin extends Plugin {
   private settings: R2UploaderSettings = DEFAULT_SETTINGS;
-  private dropHandler: (event: DragEvent) => void;
-  private dragoverHandler: (event: DragEvent) => void;
+  private dropHandler?: (event: DragEvent) => void;
+  private dragoverHandler?: (event: DragEvent) => void;
 
   async onload(): Promise<void> {
     await this.loadSettings();
@@ -197,27 +204,31 @@ export default class R2UploaderPlugin extends Plugin {
     );
 
     this.dropHandler = (event: DragEvent) => handleDrop(event, this.app, this.settings);
-    this.dragoverHandler = (event: DragEvent): void => {
+    this.dragoverHandler = (event: DragEvent) => {
       event.preventDefault();
     };
 
-    document.addEventListener('drop', this.dropHandler, { capture: true });
-    document.addEventListener('dragover', this.dragoverHandler, {
-      capture: true,
-    });
+    if (this.dropHandler && this.dragoverHandler) {
+      document.addEventListener('drop', this.dropHandler, { capture: true });
+      document.addEventListener('dragover', this.dragoverHandler, {
+        capture: true,
+      });
+    }
 
     this.registerEvent(
-      this.app.workspace.on('editor-paste', (evt: ClipboardEvent, editor: Editor) => {
+      this.app.workspace.on('editor-paste', (evt, editor) => {
         handlePaste(evt, editor, this.app, this.settings);
       })
     );
   }
 
   onunload(): void {
-    document.removeEventListener('drop', this.dropHandler, { capture: true });
-    document.removeEventListener('dragover', this.dragoverHandler, {
-      capture: true,
-    });
+    if (this.dropHandler && this.dragoverHandler) {
+      document.removeEventListener('drop', this.dropHandler, { capture: true });
+      document.removeEventListener('dragover', this.dragoverHandler, {
+        capture: true,
+      });
+    }
   }
 
   private async loadSettings(): Promise<void> {

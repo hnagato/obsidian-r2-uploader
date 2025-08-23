@@ -2,6 +2,12 @@ export type Result<T, E = string> =
   | { readonly success: true; readonly data: T }
   | { readonly success: false; readonly error: E };
 
+export const isSuccess = <T, E = string>(
+  result: Result<T, E>
+): result is { readonly success: true; readonly data: T } => {
+  return result.success;
+};
+
 export type R2UploaderSettings = {
   readonly endpoint: string;
   readonly accessKeyId: string;

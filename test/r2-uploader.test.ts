@@ -1,7 +1,7 @@
 import { PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { mockClient } from 'aws-sdk-client-mock';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { generateUniqueFileName, uploadFileToR2 } from '../r2-uploader';
+import { generateUniqueFileName, uploadFile } from '../r2-uploader';
 import { createMockFile, createValidSettings, TEST_TIMESTAMP } from './utils/test-helpers';
 
 const s3Mock = mockClient(S3Client);
@@ -57,7 +57,7 @@ describe('r2-uploader', () => {
     });
   });
 
-  describe('uploadFileToR2', () => {
+  describe('uploadFile', () => {
     beforeEach(() => {
       s3Mock.reset();
       vi.clearAllMocks();
@@ -68,7 +68,7 @@ describe('r2-uploader', () => {
       const incompleteSettings = createValidSettings({ endpoint: '' });
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(incompleteSettings, file, 'test.png');
+      const result = await uploadFile(incompleteSettings, file, 'test.png');
 
       expect(result.success).toBe(false);
       if (result.success === false) {
@@ -84,7 +84,7 @@ describe('r2-uploader', () => {
       });
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(incompleteSettings, file, 'test.png');
+      const result = await uploadFile(incompleteSettings, file, 'test.png');
 
       expect(result.success).toBe(false);
       if (result.success === false) {
@@ -102,12 +102,12 @@ describe('r2-uploader', () => {
       const file = createMockFile('test.png', 'image/png');
       vi.setSystemTime(TEST_TIMESTAMP);
 
-      const result = await uploadFileToR2(validSettings, file, 'test.png');
+      const result = await uploadFile(validSettings, file, 'test.png');
 
       expect(result.success).toBe(true);
       if (result.success) {
         expect(result.data.url).toBe(
-          'https://test-bucket.test.r2.cloudflarestorage.com/images/test.png'
+          'https://test-bucket.r2.cloudflarestorage.com/images/test.png'
         );
         expect(result.data.fileName).toBe('test.png');
         expect(result.data.timestamp).toBe(TEST_TIMESTAMP);
@@ -129,7 +129,7 @@ describe('r2-uploader', () => {
       const file = createMockFile('test.png', 'image/png');
       vi.setSystemTime(new Date('2025-01-01').getTime());
 
-      const result = await uploadFileToR2(settingsWithYear, file, 'test.png');
+      const result = await uploadFile(settingsWithYear, file, 'test.png');
 
       expect(result.success).toBe(true);
       expect(s3Mock).toHaveReceivedCommandWith(PutObjectCommand, {
@@ -144,15 +144,15 @@ describe('r2-uploader', () => {
       s3Mock.on(PutObjectCommand).resolves({});
 
       const settingsWithCustomDomain = createValidSettings({
-        customDomain: 'https://images.example.com',
+        customDomain: 'https://images.hnagato.com',
       });
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(settingsWithCustomDomain, file, 'test.png');
+      const result = await uploadFile(settingsWithCustomDomain, file, 'test.png');
 
       expect(result.success).toBe(true);
       if (result.success) {
-        expect(result.data.url).toBe('https://images.example.com/images/test.png');
+        expect(result.data.url).toBe('https://images.hnagato.com/images/test.png');
       }
     });
 
@@ -162,7 +162,7 @@ describe('r2-uploader', () => {
       const settingsWithPrefix = createValidSettings({ pathPrefix: 'uploads' });
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(settingsWithPrefix, file, 'test.png');
+      const result = await uploadFile(settingsWithPrefix, file, 'test.png');
 
       expect(result.success).toBe(true);
       expect(s3Mock).toHaveReceivedCommandWith(PutObjectCommand, {
@@ -180,7 +180,7 @@ describe('r2-uploader', () => {
       const validSettings = createValidSettings();
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(validSettings, file, 'test.png');
+      const result = await uploadFile(validSettings, file, 'test.png');
 
       expect(result.success).toBe(false);
       if (result.success === false) {
@@ -195,7 +195,7 @@ describe('r2-uploader', () => {
       const validSettings = createValidSettings();
       const file = createMockFile('test.png', 'image/png');
 
-      const result = await uploadFileToR2(validSettings, file, 'test.png');
+      const result = await uploadFile(validSettings, file, 'test.png');
 
       expect(result.success).toBe(false);
       if (result.success === false) {
@@ -209,7 +209,7 @@ describe('r2-uploader', () => {
       const file = createMockFile('test.png', 'image/png');
       vi.spyOn(file, 'arrayBuffer').mockRejectedValue(new Error('File read error'));
 
-      const result = await uploadFileToR2(validSettings, file, 'test.png');
+      const result = await uploadFile(validSettings, file, 'test.png');
 
       expect(result.success).toBe(false);
       if (result.success === false) {

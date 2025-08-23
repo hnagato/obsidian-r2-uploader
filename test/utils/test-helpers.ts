@@ -4,7 +4,7 @@ import type { R2UploaderSettings } from '../../types';
 export const createValidSettings = (
   overrides: Partial<R2UploaderSettings> = {}
 ): R2UploaderSettings => ({
-  endpoint: 'https://test.r2.cloudflarestorage.com',
+  endpoint: 'https://r2.cloudflarestorage.com',
   accessKeyId: 'test-key',
   secretAccessKey: 'test-secret',
   bucketName: 'test-bucket',
@@ -53,7 +53,7 @@ export const createMockDataTransfer = (
 
   return {
     files: Object.assign(files, {
-      item: (index: number) => files[index] || null,
+      item: (index: number) => files[index] ?? null,
     }) as FileList,
     items: Object.assign(items, {
       length: items.length,

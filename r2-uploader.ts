@@ -21,7 +21,7 @@ const generateFileKey = (
   return `${normalizedPrefix}${subdirectory}${fileName}`;
 };
 
-const buildUrl = (settings: R2UploaderSettings, key: string): string => {
+const createUrl = (settings: R2UploaderSettings, key: string): string => {
   const baseUrl =
     settings.customDomain ||
     `https://${settings.bucketName}.${settings.endpoint.replace('https://', '')}`;
@@ -56,24 +56,32 @@ const validateSettings = (settings: R2UploaderSettings): Result<R2UploaderSettin
   if (!settings.bucketName) errors.push('bucketName');
 
   if (errors.length > 0) {
-    return { success: false, error: `Missing required settings: ${errors.join(', ')}` };
+    return {
+      success: false,
+      error: `Missing required settings: ${errors.join(', ')}`,
+    };
   }
   return { success: true, data: settings };
 };
 
-export const uploadFileToR2 = async (
+const getErrorMessage = (error: unknown): string => {
+  if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
+    return 'Upload failed: CORS error. Please add "app://obsidian.md" to AllowedOrigins in your R2 bucket CORS policy.';
+  }
+  return `Upload failed: ${error}`;
+};
+
+export const uploadFile = async (
   settings: R2UploaderSettings,
   file: File,
   fileName: string
 ): Promise<Result<UploadResult>> => {
   const settingsResult = validateSettings(settings);
-  // Explicit comparison for TypeScript type guard
   if (settingsResult.success === false) {
     return { success: false, error: settingsResult.error };
   }
 
   const fileInfoResult = await fileToFileInfo(file);
-  // Explicit comparison for TypeScript type guard
   if (fileInfoResult.success === false) {
     return { success: false, error: fileInfoResult.error };
   }
@@ -91,7 +99,7 @@ export const uploadFileToR2 = async (
 
     await client.send(command);
 
-    const url = buildUrl(settings, key);
+    const url = createUrl(settings, key);
     const timestamp = Date.now();
 
     return {
@@ -103,22 +111,15 @@ export const uploadFileToR2 = async (
       },
     };
   } catch (error) {
-    let errorMessage = `Upload failed: ${error}`;
-
-    if (error instanceof TypeError && error.message.includes('Failed to fetch')) {
-      errorMessage =
-        'Upload failed: CORS error. Please add "app://obsidian.md" to AllowedOrigins in your R2 bucket CORS policy.';
-    }
-
     return {
       success: false,
-      error: errorMessage,
+      error: getErrorMessage(error),
     };
   }
 };
 
 export const generateUniqueFileName = (originalName: string): string => {
   const timestamp = Date.now();
-  const extension = originalName.split('.').pop();
+  const extension = originalName.split('.').at(-1);
   return `${timestamp}.${extension}`;
 };
