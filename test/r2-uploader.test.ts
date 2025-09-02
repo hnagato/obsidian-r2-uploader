@@ -216,5 +216,25 @@ describe('r2-uploader', () => {
         expect(result.error).toContain('Failed to read file');
       }
     });
+
+    it('should return pure domain upload result', async () => {
+      s3Mock.on(PutObjectCommand).resolves({});
+
+      const validSettings = createValidSettings();
+      const file = createMockFile('problematic<filename>.png', 'image/png');
+      vi.setSystemTime(TEST_TIMESTAMP);
+
+      const result = await uploadFile(validSettings, file, 'generated-name.png');
+
+      expect(result.success).toBe(true);
+      if (result.success) {
+        expect(result.data.fileName).toBe('generated-name.png');
+        // UploadResult now only contains domain-specific upload data
+        expect(result.data.url).toBeDefined();
+        expect(result.data.fileName).toBeDefined();
+        expect(result.data.timestamp).toBeDefined();
+        expect(result.data.timestamp).toBe(TEST_TIMESTAMP);
+      }
+    });
   });
 });

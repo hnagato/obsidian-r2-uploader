@@ -1,8 +1,9 @@
 import { type App, type Editor, MarkdownView, Notice, Plugin, PluginSettingTab } from 'obsidian';
+import sanitize from 'sanitize-filename';
 import { generateUniqueFileName, uploadFile } from './r2-uploader';
 import { createSettingsTab } from './settings-tab';
 import type { R2UploaderSettings, Result, UploadResult } from './types';
-import { DEFAULT_SETTINGS, isSuccess } from './types';
+import { DEFAULT_SETTINGS } from './types';
 
 const getCurrentFilePath = (app: App): string => {
   const activeFile = app.workspace.getActiveFile();
@@ -21,38 +22,24 @@ const showNotice = (message: string, timeout = 4_000): Notice => new Notice(mess
 const processFiles = async (
   files: File[],
   settings: R2UploaderSettings
-): Promise<readonly Result<UploadResult>[]> => {
-  const uploadPromises = files.map(file =>
-    uploadFile(settings, file, generateUniqueFileName(file.name))
-  );
-  return Promise.all(uploadPromises);
+): Promise<readonly Result<UploadResult>[]> =>
+  Promise.all(files.map(file => uploadFile(settings, file, generateUniqueFileName(file.name))));
+
+type FileProcessResult = {
+  readonly originalName: string;
+  readonly result: Result<UploadResult>;
 };
 
-const splitResults = (results: readonly Result<UploadResult>[], files: readonly File[]) =>
-  results.reduce(
-    (acc, result, index) => {
-      const file = files[index];
-      if (isSuccess(result)) {
-        acc.successful.push({ uploadResult: result.data, file });
-      } else {
-        acc.failed.push({ error: result.error, file });
-      }
-      return acc;
-    },
-    { successful: [], failed: [] } as {
-      successful: { uploadResult: UploadResult; file: File }[];
-      failed: { error: string; file: File }[];
-    }
-  );
+type MarkdownLink = {
+  readonly displayName: string;
+  readonly url: string;
+};
 
-const insertMarkdownLinks = (
-  editor: Editor,
-  successful: readonly { uploadResult: UploadResult; file: File }[]
-): void => {
+const insertMarkdownLinks = (editor: Editor, links: readonly MarkdownLink[]): void => {
   let insertPosition = editor.getCursor();
 
-  successful.forEach(({ uploadResult, file }) => {
-    const markdownLink = `![${file.name}](${uploadResult.url})`;
+  links.forEach(({ displayName, url }) => {
+    const markdownLink = `![${displayName}](${url})`;
     editor.replaceRange(markdownLink, insertPosition);
     insertPosition = {
       ...insertPosition,
@@ -61,13 +48,17 @@ const insertMarkdownLinks = (
   });
 };
 
-const showResults = (
-  successful: readonly { uploadResult: UploadResult; file: File }[],
-  failed: readonly { error: string; file: File }[]
-): Notice[] => [
-  ...successful.map(({ file }) => showNotice(`Successfully uploaded ${file.name}`, 2_000)),
-  ...failed.map(({ file, error }) => showNotice(`Failed to upload ${file.name}: ${error}`, 0)),
-];
+const showProcessResults = (results: readonly FileProcessResult[]): void => {
+  results.forEach(({ originalName, result }) => {
+    const safeName = sanitize(originalName, { replacement: '_' });
+
+    if (result.success === true) {
+      showNotice(`Successfully uploaded ${safeName}`, 2_000);
+    } else {
+      showNotice(`Failed to upload ${safeName}: ${result.error}`, 0);
+    }
+  });
+};
 
 const processImages = async (
   files: File[],
@@ -75,9 +66,25 @@ const processImages = async (
   settings: R2UploaderSettings
 ): Promise<void> => {
   const results = await processFiles(files, settings);
-  const { successful, failed } = splitResults(results, files);
-  insertMarkdownLinks(editor, successful);
-  showResults(successful, failed);
+
+  const processResults: FileProcessResult[] = results.map((result, index) => ({
+    originalName: files[index].name,
+    result,
+  }));
+
+  insertMarkdownLinks(
+    editor,
+    processResults
+      .filter(({ result }) => result.success)
+      .map(
+        ({ originalName, result }): MarkdownLink => ({
+          displayName: sanitize(originalName, { replacement: '_' }),
+          url: result.success ? result.data.url : '',
+        })
+      )
+  );
+
+  showProcessResults(processResults);
 };
 
 const extractDropFiles = (event: DragEvent): File[] => {

@@ -12,7 +12,9 @@
     "declaration": true,
     "outDir": "lib",
     "typeRoots": ["node_modules/@types"],
-    "lib": ["DOM", "ES2022"]
+    "lib": ["DOM", "ES2022"],
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true
   },
   "include": ["**/*.ts"],
   "exclude": ["test/**/*.ts"]

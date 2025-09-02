@@ -5,7 +5,14 @@ import { createValidSettings } from './utils/test-helpers';
 
 vi.mock('../r2-uploader', () => ({
   generateUniqueFileName: vi.fn().mockReturnValue('test-file-123.png'),
-  uploadFile: vi.fn().mockResolvedValue({ success: true, data: { url: 'test-url' } }),
+  uploadFile: vi.fn().mockResolvedValue({
+    success: true,
+    data: {
+      url: 'test-url',
+      fileName: 'test-file-123.png',
+      timestamp: Date.now(),
+    },
+  }),
 }));
 
 vi.mock('../settings-tab', () => ({

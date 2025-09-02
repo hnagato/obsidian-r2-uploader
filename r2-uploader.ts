@@ -120,6 +120,7 @@ export const uploadFile = async (
 
 export const generateUniqueFileName = (originalName: string): string => {
   const timestamp = Date.now();
-  const extension = originalName.split('.').at(-1);
+  const parts = originalName.split('.');
+  const extension = parts[parts.length - 1];
   return `${timestamp}.${extension}`;
 };
